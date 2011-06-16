@@ -62,9 +62,57 @@ static ssize_t __ref store_online(struct sys_device *dev, struct sysdev_attribut
 }
 static SYSDEV_ATTR(online, 0644, show_online, store_online);
 
+#ifdef CONFIG_KEXEC
+#include <linux/kexec.h>
+static ssize_t show_load_crash_kernel(struct sys_device *dev,
+				      struct sysdev_attribute *attr,
+				      char *buf)
+{
+	struct cpu *cpu = container_of(dev, struct cpu, sysdev);
+	int cpunum;
+
+	cpunum = cpu->sysdev.id;
+	return sprintf(buf, "%u\n", !!cpu_online(cpunum));
+}
+
+static ssize_t __ref store_load_crash_kernel(struct sys_device *dev,
+					     struct sysdev_attribute *attr,
+					     const char *buf, size_t count)
+{
+	struct cpu *cpu = container_of(dev, struct cpu, sysdev);
+	ssize_t ret;
+
+	cpu_hotplug_driver_lock();
+	switch (buf[0]) {
+	case '0':
+		ret = cpu_down_kernel(cpu->sysdev.id);
+		if (!ret)
+			kobject_uevent(&dev->kobj, KOBJ_OFFLINE);
+		break;
+	case '1':
+		ret = cpu_up_kernel(cpu->sysdev.id);
+		if (!ret)
+			kobject_uevent(&dev->kobj, KOBJ_ONLINE);
+		break;
+	default:
+		ret = -EINVAL;
+	}
+	cpu_hotplug_driver_unlock();
+
+	if (ret >= 0)
+		ret = count;
+	return ret;
+}
+static SYSDEV_ATTR(load_crash_kernel, 0644, show_load_crash_kernel,
+		   store_load_crash_kernel);
+#endif /* CONFIG_KEXEC */
+
 static void __cpuinit register_cpu_control(struct cpu *cpu)
 {
 	sysdev_create_file(&cpu->sysdev, &attr_online);
+#ifdef CONFIG_KEXEC
+	sysdev_create_file(&cpu->sysdev, &attr_load_crash_kernel);
+#endif
 }
 void unregister_cpu(struct cpu *cpu)
 {

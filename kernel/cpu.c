@@ -287,6 +287,12 @@ out:
 	return err;
 }
 EXPORT_SYMBOL(cpu_down);
+
+int __ref cpu_down_kernel(unsigned int cpu)
+{
+	// TODO
+}
+EXPORT_SYMBOL(cpu_down_kernel);
 #endif /*CONFIG_HOTPLUG_CPU*/
 
 /* Requires cpu_add_remove_lock to be held */
@@ -323,6 +329,11 @@ out_notify:
 	cpu_hotplug_done();
 
 	return ret;
+}
+
+int __cpuinit cpu_up_kernel(unsigned int cpu)
+{
+	// TODO
 }
 
 int __cpuinit cpu_up(unsigned int cpu)
