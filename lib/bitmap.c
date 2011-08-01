@@ -572,7 +572,7 @@ EXPORT_SYMBOL(bitmap_scnlistprintf);
 
 /**
  * __bitmap_parselist - convert list format ASCII string to bitmap
- * @bp: read nul-terminated user string from this buffer
+ * @buf: read nul-terminated user string from this buffer
  * @buflen: buffer size in bytes.  If string is smaller than this
  *    then it must be terminated with a \0.
  * @is_user: location of buffer, 0 indicates kernel space
@@ -756,7 +756,7 @@ static int bitmap_pos_to_ord(const unsigned long *buf, int pos, int bits)
  *
  * The bit positions 0 through @bits are valid positions in @buf.
  */
-static int bitmap_ord_to_pos(const unsigned long *buf, int ord, int bits)
+int bitmap_ord_to_pos(const unsigned long *buf, int ord, int bits)
 {
 	int pos = 0;
 

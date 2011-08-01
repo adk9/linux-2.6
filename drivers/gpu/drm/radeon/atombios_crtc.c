@@ -671,6 +671,13 @@ static u32 atombios_adjust_pll(struct drm_crtc *crtc,
 								DISPPLL_CONFIG_DUAL_LINK;
 					}
 				}
+				if (radeon_encoder_is_dp_bridge(encoder)) {
+					struct drm_encoder *ext_encoder = radeon_atom_get_external_encoder(encoder);
+					struct radeon_encoder *ext_radeon_encoder = to_radeon_encoder(ext_encoder);
+					args.v3.sInput.ucExtTransmitterID = ext_radeon_encoder->encoder_id;
+				} else
+					args.v3.sInput.ucExtTransmitterID = 0;
+
 				atom_execute_table(rdev->mode_info.atom_context,
 						   index, (uint32_t *)&args);
 				adjusted_clock = le32_to_cpu(args.v3.sOutput.ulDispPllFreq) * 10;
@@ -757,7 +764,7 @@ static void atombios_crtc_set_dcpll(struct drm_crtc *crtc,
 }
 
 static void atombios_crtc_program_pll(struct drm_crtc *crtc,
-				      int crtc_id,
+				      u32 crtc_id,
 				      int pll_id,
 				      u32 encoder_mode,
 				      u32 encoder_id,
@@ -844,8 +851,7 @@ static void atombios_crtc_program_pll(struct drm_crtc *crtc,
 			args.v5.ucPpll = pll_id;
 			break;
 		case 6:
-			args.v6.ulCrtcPclkFreq.ucCRTC = crtc_id;
-			args.v6.ulCrtcPclkFreq.ulPixelClock = cpu_to_le32(clock / 10);
+			args.v6.ulDispEngClkFreq = cpu_to_le32(crtc_id << 24 | clock / 10);
 			args.v6.ucRefDiv = ref_div;
 			args.v6.usFbDiv = cpu_to_le16(fb_div);
 			args.v6.ulFbDivDecFrac = cpu_to_le32(frac_fb_div * 100000);
