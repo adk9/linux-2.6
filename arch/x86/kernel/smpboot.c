@@ -50,6 +50,7 @@
 #include <linux/tboot.h>
 #include <linux/stackprotector.h>
 #include <linux/gfp.h>
+#include <linux/kexec.h>
 
 #include <asm/acpi.h>
 #include <asm/desc.h>
@@ -573,8 +574,7 @@ wakeup_secondary_cpu_via_init(int phys_apicid, unsigned long start_eip)
 	 * Paravirt / VMI wants a startup IPI hook here to set up the
 	 * target processor state.
 	 */
-	startup_ipi_hook(phys_apicid, (unsigned long) start_secondary,
-			 stack_start);
+	startup_ipi_hook(phys_apicid, initial_code, stack_start);
 
 	/*
 	 * Run STARTUP IPI loop.
@@ -662,6 +662,123 @@ static void __cpuinit announce_cpu(int cpu, int apicid)
 	} else
 		pr_info("Booting Node %d Processor %d APIC 0x%x\n",
 			node, cpu, apicid);
+}
+
+static int __cpuinit do_boot_cpu_kernel(int apicid, int cpu)
+{
+	unsigned long boot_error = 0;
+	unsigned long start_ip;
+
+	alternatives_smp_switch(1);
+
+	initial_code = (unsigned long)crashk_res.start;
+	stack_start  = initial_code + 0x10000;
+
+	/* start_ip had better be page-aligned! */
+	start_ip = trampoline_address();
+
+	/*
+	 * This grunge runs the startup process for
+	 * the targeted processor.
+	 */
+
+	printk(KERN_DEBUG "smpboot cpu %d: start_ip = %lx\n", cpu, start_ip);
+
+	atomic_set(&init_deasserted, 0);
+
+	if (get_uv_system_type() != UV_NON_UNIQUE_APIC) {
+
+		pr_debug("Setting warm reset code and vector.\n");
+
+		smpboot_setup_warm_reset_vector(start_ip);
+		/*
+		 * Be paranoid about clearing APIC errors.
+		*/
+		if (APIC_INTEGRATED(apic_version[boot_cpu_physical_apicid])) {
+			apic_write(APIC_ESR, 0);
+			apic_read(APIC_ESR);
+		}
+	}
+
+	/*
+	 * Kick the secondary CPU. Use the method in the APIC driver
+	 * if it's defined - or use an INIT boot APIC message otherwise:
+	 */
+	if (apic->wakeup_secondary_cpu)
+		boot_error = apic->wakeup_secondary_cpu(apicid, start_ip);
+	else
+		boot_error = wakeup_secondary_cpu_via_init(apicid, start_ip);
+
+	if (!boot_error) {
+		/*
+		 * allow APs to start initializing.
+		 */
+		pr_debug("Before Callout %d.\n", cpu);
+		cpumask_set_cpu(cpu, cpu_callout_mask);
+		pr_debug("After Callout %d.\n", cpu);
+	} else {
+		/* Try to put things back the way they were before ... */
+		numa_remove_cpu(cpu); /* was set by numa_add_cpu */
+
+		/* was set by do_boot_cpu() */
+		cpumask_clear_cpu(cpu, cpu_callout_mask);
+
+		/* was set by cpu_init() */
+		cpumask_clear_cpu(cpu, cpu_initialized_mask);
+
+		set_cpu_present(cpu, false);
+		per_cpu(x86_cpu_to_apicid, cpu) = BAD_APICID;
+	}
+
+	/* mark "stuck" area as not stuck */
+	*(volatile u32 *)TRAMPOLINE_SYM(trampoline_status) = 0;
+
+	if (get_uv_system_type() != UV_NON_UNIQUE_APIC) {
+		/*
+		 * Cleanup possible dangling ends...
+		 */
+		smpboot_restore_warm_reset_vector();
+	}
+
+	return boot_error;
+}
+
+int __cpuinit native_cpu_up_kernel(unsigned int cpu)
+{
+	int apicid = apic->cpu_present_to_apicid(cpu);
+	int err;
+
+	WARN_ON(irqs_disabled());
+
+	pr_debug("++++++++++++++++++++=_---CPU UP  %u\n", cpu);
+
+	if (apicid == BAD_APICID || apicid == boot_cpu_physical_apicid ||
+	    !physid_isset(apicid, phys_cpu_present_map)) {
+		printk(KERN_ERR "%s: bad cpu %d\n", __func__, cpu);
+		return -EINVAL;
+	}
+
+	/*
+	 * Already booted CPU?
+	 */
+	if (cpumask_test_cpu(cpu, cpu_callin_mask)) {
+		pr_debug("do_boot_cpu_kernel %d Already started\n", cpu);
+		return -ENOSYS;
+	}
+
+	/*
+	 * Save current MTRR state in case it was changed since early boot
+	 * (e.g. by the ACPI SMI) to initialize new CPUs with MTRRs in sync:
+	 */
+	mtrr_save_state();
+
+	err = do_boot_cpu_kernel(apicid, cpu);
+	if (err) {
+		pr_debug("do_boot_cpu_kernel failed %d\n", err);
+		return -EIO;
+	}
+
+	return 0;
 }
 
 /*
