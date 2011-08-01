@@ -71,6 +71,7 @@ struct smp_ops {
 	void (*smp_send_reschedule)(int cpu);
 
 	int (*cpu_up)(unsigned cpu);
+	int (*cpu_up_kernel)(unsigned cpu);
 	int (*cpu_disable)(void);
 	void (*cpu_die)(unsigned int cpu);
 	void (*play_dead)(void);
@@ -118,6 +119,11 @@ static inline int __cpu_up(unsigned int cpu)
 	return smp_ops.cpu_up(cpu);
 }
 
+static inline int __cpu_up_kernel(unsigned int cpu)
+{
+	return smp_ops.cpu_up_kernel(cpu);
+}
+
 static inline int __cpu_disable(void)
 {
 	return smp_ops.cpu_disable();
@@ -153,6 +159,7 @@ void native_smp_prepare_boot_cpu(void);
 void native_smp_prepare_cpus(unsigned int max_cpus);
 void native_smp_cpus_done(unsigned int max_cpus);
 int native_cpu_up(unsigned int cpunum);
+int native_cpu_up_kernel(unsigned int cpunum);
 int native_cpu_disable(void);
 void native_cpu_die(unsigned int cpu);
 void native_play_dead(void);
