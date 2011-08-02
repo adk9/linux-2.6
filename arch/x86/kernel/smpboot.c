@@ -671,7 +671,7 @@ static int __cpuinit do_boot_cpu_kernel(int apicid, int cpu)
 
 	alternatives_smp_switch(1);
 
-	initial_code = (unsigned long)crashk_res.start;
+	initial_code = (unsigned long)kexec_crash_image->start;
 	stack_start  = initial_code + 0x10000;
 
 	/* start_ip had better be page-aligned! */
