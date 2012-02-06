@@ -24,6 +24,7 @@
 
 #include <linux/kernel.h>
 #include <linux/dma-mapping.h>
+#include <linux/export.h>
 #include <linux/vmalloc.h>
 #include <linux/clk.h>
 #include <linux/io.h>
@@ -783,7 +784,6 @@ int omap_rfbi_prepare_update(struct omap_dss_device *dssdev,
 	if (*w == 0 || *h == 0)
 		return -EINVAL;
 
-	dss_setup_partial_planes(dssdev, x, y, w, h, true);
 	dispc_mgr_set_lcd_size(dssdev->manager->id, *w, *h);
 
 	return 0;

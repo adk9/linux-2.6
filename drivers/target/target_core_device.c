@@ -35,19 +35,18 @@
 #include <linux/spinlock.h>
 #include <linux/kthread.h>
 #include <linux/in.h>
+#include <linux/export.h>
 #include <net/sock.h>
 #include <net/tcp.h>
 #include <scsi/scsi.h>
 #include <scsi/scsi_device.h>
 
 #include <target/target_core_base.h>
-#include <target/target_core_device.h>
-#include <target/target_core_tpg.h>
-#include <target/target_core_transport.h>
-#include <target/target_core_fabric_ops.h>
+#include <target/target_core_backend.h>
+#include <target/target_core_fabric.h>
 
+#include "target_core_internal.h"
 #include "target_core_alua.h"
-#include "target_core_hba.h"
 #include "target_core_pr.h"
 #include "target_core_ua.h"
 
@@ -103,7 +102,6 @@ int transport_lookup_cmd_lun(struct se_cmd *se_cmd, u32 unpacked_lun)
 		se_cmd->se_lun = deve->se_lun;
 		se_cmd->pr_res_key = deve->pr_res_key;
 		se_cmd->orig_fe_lun = unpacked_lun;
-		se_cmd->se_orig_obj_ptr = se_cmd->se_lun->lun_se_dev;
 		se_cmd->se_cmd_flags |= SCF_SE_LUN_CMD;
 	}
 	spin_unlock_irqrestore(&se_sess->se_node_acl->device_list_lock, flags);
@@ -136,7 +134,6 @@ int transport_lookup_cmd_lun(struct se_cmd *se_cmd, u32 unpacked_lun)
 		se_lun = &se_sess->se_tpg->tpg_virt_lun0;
 		se_cmd->se_lun = &se_sess->se_tpg->tpg_virt_lun0;
 		se_cmd->orig_fe_lun = 0;
-		se_cmd->se_orig_obj_ptr = se_cmd->se_lun->lun_se_dev;
 		se_cmd->se_cmd_flags |= SCF_SE_LUN_CMD;
 	}
 	/*
@@ -199,7 +196,6 @@ int transport_lookup_tmr_lun(struct se_cmd *se_cmd, u32 unpacked_lun)
 		se_lun = deve->se_lun;
 		se_cmd->pr_res_key = deve->pr_res_key;
 		se_cmd->orig_fe_lun = unpacked_lun;
-		se_cmd->se_orig_obj_ptr = se_cmd->se_dev;
 	}
 	spin_unlock_irqrestore(&se_sess->se_node_acl->device_list_lock, flags);
 
@@ -651,22 +647,14 @@ void core_dev_unexport(
 	lun->lun_se_dev = NULL;
 }
 
-int transport_core_report_lun_response(struct se_cmd *se_cmd)
+int target_report_luns(struct se_task *se_task)
 {
+	struct se_cmd *se_cmd = se_task->task_se_cmd;
 	struct se_dev_entry *deve;
 	struct se_lun *se_lun;
 	struct se_session *se_sess = se_cmd->se_sess;
-	struct se_task *se_task;
 	unsigned char *buf;
 	u32 cdb_offset = 0, lun_count = 0, offset = 8, i;
-
-	list_for_each_entry(se_task, &se_cmd->t_task_list, t_list)
-		break;
-
-	if (!se_task) {
-		pr_err("Unable to locate struct se_task for struct se_cmd\n");
-		return PYX_TRANSPORT_LU_COMM_FAILURE;
-	}
 
 	buf = transport_kmap_first_data_page(se_cmd);
 
@@ -713,7 +701,9 @@ done:
 	buf[2] = ((lun_count >> 8) & 0xff);
 	buf[3] = (lun_count & 0xff);
 
-	return PYX_TRANSPORT_SENT_TO_TRANSPORT;
+	se_task->task_scsi_status = GOOD;
+	transport_complete_task(se_task, 1);
+	return 0;
 }
 
 /*	se_release_device_for_hba():
@@ -962,8 +952,12 @@ int se_dev_set_emulate_dpo(struct se_device *dev, int flag)
 		return -EINVAL;
 	}
 
-	pr_err("dpo_emulated not supported\n");
-	return -EINVAL;
+	if (flag) {
+		pr_err("dpo_emulated not supported\n");
+		return -EINVAL;
+	}
+
+	return 0;
 }
 
 int se_dev_set_emulate_fua_write(struct se_device *dev, int flag)
@@ -973,7 +967,7 @@ int se_dev_set_emulate_fua_write(struct se_device *dev, int flag)
 		return -EINVAL;
 	}
 
-	if (dev->transport->fua_write_emulated == 0) {
+	if (flag && dev->transport->fua_write_emulated == 0) {
 		pr_err("fua_write_emulated not supported\n");
 		return -EINVAL;
 	}
@@ -990,8 +984,12 @@ int se_dev_set_emulate_fua_read(struct se_device *dev, int flag)
 		return -EINVAL;
 	}
 
-	pr_err("ua read emulated not supported\n");
-	return -EINVAL;
+	if (flag) {
+		pr_err("ua read emulated not supported\n");
+		return -EINVAL;
+	}
+
+	return 0;
 }
 
 int se_dev_set_emulate_write_cache(struct se_device *dev, int flag)
@@ -1000,7 +998,7 @@ int se_dev_set_emulate_write_cache(struct se_device *dev, int flag)
 		pr_err("Illegal value %d\n", flag);
 		return -EINVAL;
 	}
-	if (dev->transport->write_cache_emulated == 0) {
+	if (flag && dev->transport->write_cache_emulated == 0) {
 		pr_err("write_cache_emulated not supported\n");
 		return -EINVAL;
 	}
@@ -1061,7 +1059,7 @@ int se_dev_set_emulate_tpu(struct se_device *dev, int flag)
 	 * We expect this value to be non-zero when generic Block Layer
 	 * Discard supported is detected iblock_create_virtdevice().
 	 */
-	if (!dev->se_sub_dev->se_dev_attrib.max_unmap_block_desc_count) {
+	if (flag && !dev->se_sub_dev->se_dev_attrib.max_unmap_block_desc_count) {
 		pr_err("Generic Block Discard not supported\n");
 		return -ENOSYS;
 	}
@@ -1082,7 +1080,7 @@ int se_dev_set_emulate_tpws(struct se_device *dev, int flag)
 	 * We expect this value to be non-zero when generic Block Layer
 	 * Discard supported is detected iblock_create_virtdevice().
 	 */
-	if (!dev->se_sub_dev->se_dev_attrib.max_unmap_block_desc_count) {
+	if (flag && !dev->se_sub_dev->se_dev_attrib.max_unmap_block_desc_count) {
 		pr_err("Generic Block Discard not supported\n");
 		return -ENOSYS;
 	}
@@ -1134,8 +1132,6 @@ int se_dev_set_emulate_rest_reord(struct se_device *dev, int flag)
  */
 int se_dev_set_queue_depth(struct se_device *dev, u32 queue_depth)
 {
-	u32 orig_queue_depth = dev->queue_depth;
-
 	if (atomic_read(&dev->dev_export_obj.obj_access_count)) {
 		pr_err("dev[%p]: Unable to change SE Device TCQ while"
 			" dev_export_obj: %d count exists\n", dev,
@@ -1169,11 +1165,6 @@ int se_dev_set_queue_depth(struct se_device *dev, u32 queue_depth)
 	}
 
 	dev->se_sub_dev->se_dev_attrib.queue_depth = dev->queue_depth = queue_depth;
-	if (queue_depth > orig_queue_depth)
-		atomic_add(queue_depth - orig_queue_depth, &dev->depth_left);
-	else if (queue_depth < orig_queue_depth)
-		atomic_sub(orig_queue_depth - queue_depth, &dev->depth_left);
-
 	pr_debug("dev[%p]: SE Device TCQ Depth changed to: %u\n",
 			dev, queue_depth);
 	return 0;
@@ -1592,7 +1583,6 @@ int core_dev_setup_virtual_lun0(void)
 		ret = -ENOMEM;
 		goto out;
 	}
-	INIT_LIST_HEAD(&se_dev->se_dev_node);
 	INIT_LIST_HEAD(&se_dev->t10_wwn.t10_vpd_list);
 	spin_lock_init(&se_dev->t10_wwn.t10_vpd_lock);
 	INIT_LIST_HEAD(&se_dev->t10_pr.registration_list);

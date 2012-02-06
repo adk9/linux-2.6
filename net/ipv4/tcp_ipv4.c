@@ -73,6 +73,7 @@
 #include <net/xfrm.h>
 #include <net/netdma.h>
 #include <net/secure_seq.h>
+#include <net/tcp_memcontrol.h>
 
 #include <linux/inet.h>
 #include <linux/ipv6.h>
@@ -630,7 +631,7 @@ static void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 	arg.iov[0].iov_len  = sizeof(rep.th);
 
 #ifdef CONFIG_TCP_MD5SIG
-	key = sk ? tcp_v4_md5_do_lookup(sk, ip_hdr(skb)->daddr) : NULL;
+	key = sk ? tcp_v4_md5_do_lookup(sk, ip_hdr(skb)->saddr) : NULL;
 	if (key) {
 		rep.opt[0] = htonl((TCPOPT_NOP << 24) |
 				   (TCPOPT_NOP << 16) |
@@ -1510,6 +1511,9 @@ exit:
 	NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_LISTENDROPS);
 	return NULL;
 put_and_exit:
+	tcp_clear_xmit_timers(newsk);
+	tcp_cleanup_congestion_control(newsk);
+	bh_unlock_sock(newsk);
 	sock_put(newsk);
 	goto exit;
 }
@@ -1914,7 +1918,8 @@ static int tcp_v4_init_sock(struct sock *sk)
 	sk->sk_rcvbuf = sysctl_tcp_rmem[1];
 
 	local_bh_disable();
-	percpu_counter_inc(&tcp_sockets_allocated);
+	sock_update_memcg(sk);
+	sk_sockets_allocated_inc(sk);
 	local_bh_enable();
 
 	return 0;
@@ -1970,7 +1975,8 @@ void tcp_v4_destroy_sock(struct sock *sk)
 		tp->cookie_values = NULL;
 	}
 
-	percpu_counter_dec(&tcp_sockets_allocated);
+	sk_sockets_allocated_dec(sk);
+	sock_release_memcg(sk);
 }
 EXPORT_SYMBOL(tcp_v4_destroy_sock);
 
@@ -2339,7 +2345,7 @@ static void tcp_seq_stop(struct seq_file *seq, void *v)
 	}
 }
 
-static int tcp_seq_open(struct inode *inode, struct file *file)
+int tcp_seq_open(struct inode *inode, struct file *file)
 {
 	struct tcp_seq_afinfo *afinfo = PDE(inode)->data;
 	struct tcp_iter_state *s;
@@ -2355,23 +2361,19 @@ static int tcp_seq_open(struct inode *inode, struct file *file)
 	s->last_pos 		= 0;
 	return 0;
 }
+EXPORT_SYMBOL(tcp_seq_open);
 
 int tcp_proc_register(struct net *net, struct tcp_seq_afinfo *afinfo)
 {
 	int rc = 0;
 	struct proc_dir_entry *p;
 
-	afinfo->seq_fops.open		= tcp_seq_open;
-	afinfo->seq_fops.read		= seq_read;
-	afinfo->seq_fops.llseek		= seq_lseek;
-	afinfo->seq_fops.release	= seq_release_net;
-
 	afinfo->seq_ops.start		= tcp_seq_start;
 	afinfo->seq_ops.next		= tcp_seq_next;
 	afinfo->seq_ops.stop		= tcp_seq_stop;
 
 	p = proc_create_data(afinfo->name, S_IRUGO, net->proc_net,
-			     &afinfo->seq_fops, afinfo);
+			     afinfo->seq_fops, afinfo);
 	if (!p)
 		rc = -ENOMEM;
 	return rc;
@@ -2520,12 +2522,18 @@ out:
 	return 0;
 }
 
+static const struct file_operations tcp_afinfo_seq_fops = {
+	.owner   = THIS_MODULE,
+	.open    = tcp_seq_open,
+	.read    = seq_read,
+	.llseek  = seq_lseek,
+	.release = seq_release_net
+};
+
 static struct tcp_seq_afinfo tcp4_seq_afinfo = {
 	.name		= "tcp",
 	.family		= AF_INET,
-	.seq_fops	= {
-		.owner		= THIS_MODULE,
-	},
+	.seq_fops	= &tcp_afinfo_seq_fops,
 	.seq_ops	= {
 		.show		= tcp4_seq_show,
 	},
@@ -2615,7 +2623,6 @@ struct proto tcp_prot = {
 	.orphan_count		= &tcp_orphan_count,
 	.memory_allocated	= &tcp_memory_allocated,
 	.memory_pressure	= &tcp_memory_pressure,
-	.sysctl_mem		= sysctl_tcp_mem,
 	.sysctl_wmem		= sysctl_tcp_wmem,
 	.sysctl_rmem		= sysctl_tcp_rmem,
 	.max_header		= MAX_TCP_HEADER,
@@ -2629,9 +2636,13 @@ struct proto tcp_prot = {
 	.compat_setsockopt	= compat_tcp_setsockopt,
 	.compat_getsockopt	= compat_tcp_getsockopt,
 #endif
+#ifdef CONFIG_CGROUP_MEM_RES_CTLR_KMEM
+	.init_cgroup		= tcp_init_cgroup,
+	.destroy_cgroup		= tcp_destroy_cgroup,
+	.proto_cgroup		= tcp_proto_cgroup,
+#endif
 };
 EXPORT_SYMBOL(tcp_prot);
-
 
 static int __net_init tcp_sk_init(struct net *net)
 {

@@ -27,13 +27,13 @@
 #include <linux/leds_pwm.h>
 
 #include <mach/hardware.h>
-#include <mach/omap4-common.h>
+#include <asm/hardware/gic.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 
 #include <plat/board.h>
-#include <plat/common.h>
+#include "common.h"
 #include <plat/usb.h>
 #include <plat/mmc.h>
 #include <plat/omap4-keypad.h>
@@ -133,7 +133,7 @@ static const int sdp4430_keymap[] = {
 	KEY(7, 6, KEY_OK),
 	KEY(7, 7, KEY_DOWN),
 };
-static struct omap_device_pad keypad_pads[] __initdata = {
+static struct omap_device_pad keypad_pads[] = {
 	{	.name   = "kpd_col1.kpd_col1",
 		.enable = OMAP_WAKEUP_EN | OMAP_MUX_MODE1,
 	},
@@ -372,18 +372,18 @@ static struct platform_device sdp4430_vbat = {
 	},
 };
 
+static struct platform_device sdp4430_dmic_codec = {
+	.name	= "dmic-codec",
+	.id	= -1,
+};
+
 static struct platform_device *sdp4430_devices[] __initdata = {
 	&sdp4430_gpio_keys_device,
 	&sdp4430_leds_gpio,
 	&sdp4430_leds_pwm,
 	&sdp4430_vbat,
+	&sdp4430_dmic_codec,
 };
-
-static void __init omap_4430sdp_init_early(void)
-{
-	omap2_init_common_infrastructure();
-	omap2_init_common_devices(NULL, NULL);
-}
 
 static struct omap_musb_board_data musb_board_data = {
 	.interface_type		= MUSB_INTERFACE_UTMI,
@@ -410,6 +410,7 @@ static struct omap2_hsmmc_info mmc[] = {
 	{
 		.mmc		= 5,
 		.caps		= MMC_CAP_4_BIT_DATA | MMC_CAP_POWER_OFF_CARD,
+		.pm_caps	= MMC_PM_KEEP_POWER,
 		.gpio_cd	= -EINVAL,
 		.gpio_wp	= -EINVAL,
 		.ocr_mask	= MMC_VDD_165_195,
@@ -599,20 +600,6 @@ static void __init omap_sfh7741prox_init(void)
 	if (error < 0)
 		pr_err("%s:failed to request GPIO %d, error %d\n",
 			__func__, OMAP4_SFH7741_ENABLE_GPIO, error);
-}
-
-static void sdp4430_hdmi_mux_init(void)
-{
-	/* PAD0_HDMI_HPD_PAD1_HDMI_CEC */
-	omap_mux_init_signal("hdmi_hpd",
-			OMAP_PIN_INPUT_PULLUP);
-	omap_mux_init_signal("hdmi_cec",
-			OMAP_PIN_INPUT_PULLUP);
-	/* PAD0_HDMI_DDC_SCL_PAD1_HDMI_DDC_SDA */
-	omap_mux_init_signal("hdmi_ddc_scl",
-			OMAP_PIN_INPUT_PULLUP);
-	omap_mux_init_signal("hdmi_ddc_sda",
-			OMAP_PIN_INPUT_PULLUP);
 }
 
 static struct gpio sdp4430_hdmi_gpios[] = {
@@ -832,9 +819,16 @@ static void omap_4430sdp_display_init(void)
 		pr_err("%s: Could not get display_sel GPIO\n", __func__);
 
 	sdp4430_lcd_init();
-	sdp4430_hdmi_mux_init();
 	sdp4430_picodlp_init();
 	omap_display_init(&sdp4430_dss_data);
+	/*
+	 * OMAP4460SDP/Blaze and OMAP4430 ES2.3 SDP/Blaze boards and
+	 * later have external pull up on the HDMI I2C lines
+	 */
+	if (cpu_is_omap446x() || omap_rev() > OMAP4430_REV_ES2_2)
+		omap_hdmi_init(OMAP_HDMI_SDA_SCL_EXTERNAL_PULLUP);
+	else
+		omap_hdmi_init(0);
 }
 
 #ifdef CONFIG_OMAP_MUX
@@ -843,74 +837,8 @@ static struct omap_board_mux board_mux[] __initdata = {
 	{ .reg_offset = OMAP_MUX_TERMINATOR },
 };
 
-static struct omap_device_pad serial2_pads[] __initdata = {
-	OMAP_MUX_STATIC("uart2_cts.uart2_cts",
-			 OMAP_PIN_INPUT_PULLUP | OMAP_MUX_MODE0),
-	OMAP_MUX_STATIC("uart2_rts.uart2_rts",
-			 OMAP_PIN_OUTPUT | OMAP_MUX_MODE0),
-	OMAP_MUX_STATIC("uart2_rx.uart2_rx",
-			 OMAP_PIN_INPUT_PULLUP | OMAP_MUX_MODE0),
-	OMAP_MUX_STATIC("uart2_tx.uart2_tx",
-			 OMAP_PIN_OUTPUT | OMAP_MUX_MODE0),
-};
-
-static struct omap_device_pad serial3_pads[] __initdata = {
-	OMAP_MUX_STATIC("uart3_cts_rctx.uart3_cts_rctx",
-			 OMAP_PIN_INPUT_PULLUP | OMAP_MUX_MODE0),
-	OMAP_MUX_STATIC("uart3_rts_sd.uart3_rts_sd",
-			 OMAP_PIN_OUTPUT | OMAP_MUX_MODE0),
-	OMAP_MUX_STATIC("uart3_rx_irrx.uart3_rx_irrx",
-			 OMAP_PIN_INPUT | OMAP_MUX_MODE0),
-	OMAP_MUX_STATIC("uart3_tx_irtx.uart3_tx_irtx",
-			 OMAP_PIN_OUTPUT | OMAP_MUX_MODE0),
-};
-
-static struct omap_device_pad serial4_pads[] __initdata = {
-	OMAP_MUX_STATIC("uart4_rx.uart4_rx",
-			 OMAP_PIN_INPUT | OMAP_MUX_MODE0),
-	OMAP_MUX_STATIC("uart4_tx.uart4_tx",
-			 OMAP_PIN_OUTPUT | OMAP_MUX_MODE0),
-};
-
-static struct omap_board_data serial2_data __initdata = {
-	.id		= 1,
-	.pads		= serial2_pads,
-	.pads_cnt	= ARRAY_SIZE(serial2_pads),
-};
-
-static struct omap_board_data serial3_data __initdata = {
-	.id		= 2,
-	.pads		= serial3_pads,
-	.pads_cnt	= ARRAY_SIZE(serial3_pads),
-};
-
-static struct omap_board_data serial4_data __initdata = {
-	.id		= 3,
-	.pads		= serial4_pads,
-	.pads_cnt	= ARRAY_SIZE(serial4_pads),
-};
-
-static inline void board_serial_init(void)
-{
-	struct omap_board_data bdata;
-	bdata.flags	= 0;
-	bdata.pads	= NULL;
-	bdata.pads_cnt	= 0;
-	bdata.id	= 0;
-	/* pass dummy data for UART1 */
-	omap_serial_init_port(&bdata);
-
-	omap_serial_init_port(&serial2_data);
-	omap_serial_init_port(&serial3_data);
-	omap_serial_init_port(&serial4_data);
-}
 #else
 #define board_mux	NULL
-
-static inline void board_serial_init(void)
-{
-	omap_serial_init();
-}
  #endif
 
 static void omap4_sdp4430_wifi_mux_init(void)
@@ -960,7 +888,8 @@ static void __init omap_4430sdp_init(void)
 	omap4_i2c_init();
 	omap_sfh7741prox_init();
 	platform_add_devices(sdp4430_devices, ARRAY_SIZE(sdp4430_devices));
-	board_serial_init();
+	omap_serial_init();
+	omap_sdrc_init(NULL, NULL);
 	omap4_sdp4430_wifi_init();
 	omap4_twl6030_hsmmc_init(mmc);
 
@@ -982,19 +911,15 @@ static void __init omap_4430sdp_init(void)
 	omap_4430sdp_display_init();
 }
 
-static void __init omap_4430sdp_map_io(void)
-{
-	omap2_set_globals_443x();
-	omap44xx_map_common_io();
-}
-
 MACHINE_START(OMAP_4430SDP, "OMAP4430 4430SDP board")
 	/* Maintainer: Santosh Shilimkar - Texas Instruments Inc */
 	.atag_offset	= 0x100,
 	.reserve	= omap_reserve,
-	.map_io		= omap_4430sdp_map_io,
-	.init_early	= omap_4430sdp_init_early,
+	.map_io		= omap4_map_io,
+	.init_early	= omap4430_init_early,
 	.init_irq	= gic_init_irq,
+	.handle_irq	= gic_handle_irq,
 	.init_machine	= omap_4430sdp_init,
 	.timer		= &omap4_timer,
+	.restart	= omap_prcm_restart,
 MACHINE_END

@@ -442,12 +442,14 @@ static int ixgbe_set_vf_macvlan(struct ixgbe_adapter *adapter,
 
 int ixgbe_check_vf_assignment(struct ixgbe_adapter *adapter)
 {
+#ifdef CONFIG_PCI_IOV
 	int i;
 	for (i = 0; i < adapter->num_vfs; i++) {
 		if (adapter->vfinfo[i].vfdev->dev_flags &
 				PCI_DEV_FLAGS_ASSIGNED)
 			return true;
 	}
+#endif
 	return false;
 }
 
@@ -570,7 +572,7 @@ static int ixgbe_rcv_msg_from_vf(struct ixgbe_adapter *adapter, u32 vf)
 
 		/* reply to reset with ack and vf mac address */
 		msgbuf[0] = IXGBE_VF_RESET | IXGBE_VT_MSGTYPE_ACK;
-		memcpy(new_mac, vf_mac, IXGBE_ETH_LENGTH_OF_ADDRESS);
+		memcpy(new_mac, vf_mac, ETH_ALEN);
 		/*
 		 * Piggyback the multicast filter type so VF can compute the
 		 * correct vectors

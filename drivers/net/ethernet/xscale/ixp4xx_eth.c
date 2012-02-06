@@ -35,6 +35,7 @@
 #include <linux/platform_device.h>
 #include <linux/ptp_classify.h>
 #include <linux/slab.h>
+#include <linux/module.h>
 #include <mach/ixp46x_ts.h>
 #include <mach/npe.h>
 #include <mach/qmgr.h>
@@ -528,7 +529,7 @@ static int ixp4xx_mdio_register(void)
 	mdio_bus->name = "IXP4xx MII Bus";
 	mdio_bus->read = &ixp4xx_mdio_read;
 	mdio_bus->write = &ixp4xx_mdio_write;
-	strcpy(mdio_bus->id, "0");
+	snprintf(mdio_bus->id, MII_BUS_ID_SIZE, "ixp4xx-eth-0");
 
 	if ((err = mdiobus_register(mdio_bus)))
 		mdiobus_free(mdio_bus);
