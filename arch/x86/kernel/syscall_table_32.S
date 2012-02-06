@@ -168,7 +168,7 @@ ENTRY(sys_call_table)
 	.long ptregs_vm86
 	.long sys_ni_syscall	/* Old sys_query_module */
 	.long sys_poll
-	.long sys_nfsservctl
+	.long sys_ni_syscall	/* Old nfsservctl */
 	.long sys_setresgid16	/* 170 */
 	.long sys_getresgid16
 	.long sys_prctl
@@ -346,4 +346,9 @@ ENTRY(sys_call_table)
 	.long sys_syncfs
 	.long sys_sendmmsg		/* 345 */
 	.long sys_setns
+<<<<<<< HEAD
 	.long sys_pfork
+=======
+	.long sys_process_vm_readv
+	.long sys_process_vm_writev
+>>>>>>> 894cec241c37c26f5768dad2b2f013d782619c31
