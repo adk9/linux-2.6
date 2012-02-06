@@ -65,33 +65,33 @@ static DEVICE_ATTR(online, 0644, show_online, store_online);
 
 #ifdef CONFIG_KEXEC
 #include <linux/kexec.h>
-static ssize_t show_load_crash_kernel(struct sys_device *dev,
-				      struct sysdev_attribute *attr,
+static ssize_t show_load_crash_kernel(struct device *dev,
+				      struct device_attribute *attr,
 				      char *buf)
 {
-	struct cpu *cpu = container_of(dev, struct cpu, sysdev);
+	struct cpu *cpu = container_of(dev, struct cpu, dev);
 	int cpunum;
 
-	cpunum = cpu->sysdev.id;
+	cpunum = cpu->dev.id;
 	return sprintf(buf, "%u\n", !!cpu_online(cpunum));
 }
 
-static ssize_t __ref store_load_crash_kernel(struct sys_device *dev,
-					     struct sysdev_attribute *attr,
+static ssize_t __ref store_load_crash_kernel(struct device *dev,
+					     struct device_attribute *attr,
 					     const char *buf, size_t count)
 {
-	struct cpu *cpu = container_of(dev, struct cpu, sysdev);
+	struct cpu *cpu = container_of(dev, struct cpu, dev);
 	ssize_t ret;
 
 	cpu_hotplug_driver_lock();
 	switch (buf[0]) {
 	case '0':
-		ret = cpu_down_kernel(cpu->sysdev.id);
+		ret = cpu_down_kernel(cpu->dev.id);
 		if (!ret)
 			kobject_uevent(&dev->kobj, KOBJ_OFFLINE);
 		break;
 	case '1':
-		ret = cpu_up_kernel(cpu->sysdev.id);
+		ret = cpu_up_kernel(cpu->dev.id);
 		if (!ret)
 			kobject_uevent(&dev->kobj, KOBJ_ONLINE);
 		break;
