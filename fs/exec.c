@@ -2301,3 +2301,18 @@ int dump_seek(struct file *file, loff_t off)
 	return ret;
 }
 EXPORT_SYMBOL(dump_seek);
+
+int sys_pspawn(const char *filename,
+	const char __user *const __user *argv,
+	const char __user *const __user *envp,
+	struct pt_regs *regs)
+{
+	int pid;
+
+	pid = do_fork(SIGCHLD, regs->sp, regs, 0, NULL, NULL);
+	if (pid) {
+	  return do_execve_common(filename, argv, envp, regs);
+	}
+
+	return pid;
+}
