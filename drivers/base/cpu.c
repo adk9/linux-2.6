@@ -104,7 +104,7 @@ static ssize_t __ref store_load_crash_kernel(struct device *dev,
 		ret = count;
 	return ret;
 }
-static SYSDEV_ATTR(load_crash_kernel, 0644, show_load_crash_kernel,
+static DEVICE_ATTR(load_crash_kernel, 0644, show_load_crash_kernel,
 		   store_load_crash_kernel);
 #endif /* CONFIG_KEXEC */
 
@@ -112,7 +112,7 @@ static void __cpuinit register_cpu_control(struct cpu *cpu)
 {
 	device_create_file(&cpu->dev, &dev_attr_online);
 #ifdef CONFIG_KEXEC
-	device_create_file(&cpu->dev, &attr_load_crash_kernel);
+	device_create_file(&cpu->dev, &dev_attr_load_crash_kernel);
 #endif
 }
 
