@@ -691,8 +691,8 @@ __SC_COMP(__NR_process_vm_readv, sys_process_vm_readv, \
 #define __NR_process_vm_writev 271
 __SC_COMP(__NR_process_vm_writev, sys_process_vm_writev, \
           compat_sys_process_vm_writev)
-#define __NR_pfork 272
-__SYSCALL(__NR_pfork, sys_pfork)
+#define __NR_pspawn 272
+__SYSCALL(__NR_pspawn, sys_pspawn)
 
 #undef __NR_syscalls
 #define __NR_syscalls 273
