@@ -2316,9 +2316,9 @@ int sys_pspawn(const char __user *name,
 	pid = do_fork(SIGCHLD, regs->sp, regs, 0, NULL, NULL);
 	if (pid == 0) {
 	        filename = getname(name);
-	        retval = PTR_ERR(filename);
+	        error = PTR_ERR(filename);
 	        if (IS_ERR(filename))
-		        return retval;
+		        return error;
 
 	        error = do_execve_common(filename, argv, envp, regs);
                 putname(filename);
