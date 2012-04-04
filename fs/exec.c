@@ -2302,16 +2302,27 @@ int dump_seek(struct file *file, loff_t off)
 }
 EXPORT_SYMBOL(dump_seek);
 
-int sys_pspawn(const char *filename,
-	const char __user *const __user *argv,
-	const char __user *const __user *envp,
+int sys_pspawn(const char __user *name,
+	const char __user *const __user *__argv,
+	const char __user *const __user *__envp,
 	struct pt_regs *regs)
 {
 	int pid;
+	long error;
+        char *filename;
+	struct user_arg_ptr argv = { .ptr.native = __argv };
+	struct user_arg_ptr envp = { .ptr.native = __envp };
 
 	pid = do_fork(SIGCHLD, regs->sp, regs, 0, NULL, NULL);
-	if (pid) {
-	  return do_execve_common(filename, argv, envp, regs);
+	if (pid == 0) {
+	        filename = getname(name);
+	        retval = PTR_ERR(filename);
+	        if (IS_ERR(filename))
+		        return retval;
+
+	        error = do_execve_common(filename, argv, envp, regs);
+                putname(filename);
+                return error;
 	}
 
 	return pid;
