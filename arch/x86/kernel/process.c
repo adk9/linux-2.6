@@ -327,6 +327,31 @@ long sys_execve(const char __user *name,
 	return error;
 }
 
+long sys_pspawn(const char __user *name,
+	const char __user *const __user *__argv,
+	const char __user *const __user *__envp,
+	struct pt_regs *regs)
+{
+	long error;
+	char *filename;
+
+	filename = getname(name);
+	error = PTR_ERR(filename);
+	if (IS_ERR(filename))
+		return error;
+	error = do_pspawn(filename, __argv, __envp, regs);
+
+#ifdef CONFIG_X86_32
+	if (error == 0) {
+		/* Make sure we don't return using sysenter.. */
+		set_thread_flag(TIF_IRET);
+	}
+#endif
+
+	putname(filename);
+	return error;
+}
+
 /*
  * Idle related variables and functions
  */

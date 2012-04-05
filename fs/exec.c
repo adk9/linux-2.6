@@ -2302,28 +2302,83 @@ int dump_seek(struct file *file, loff_t off)
 }
 EXPORT_SYMBOL(dump_seek);
 
-int sys_pspawn(const char __user *name,
+static int copy_strings_user(const char __user *const __user *str, char ***result)
+{
+	struct user_arg_ptr sptr = { .ptr.native = str };
+	int n, cnt, ret;
+	char **res;
+
+	ret = -EFAULT;
+	cnt = count(sptr, MAX_ARG_STRINGS);
+	if (cnt < 0)
+		goto out;
+
+	res = kzalloc(sizeof(*res) * (cnt+1), GFP_KERNEL);
+	if (!res)
+		goto out;
+
+	*result = res;
+
+	for (n = 0; n < cnt; n++) {
+		const char __user *ustr;
+		int len;
+
+		ret = -EFAULT;
+		ustr = get_user_arg_ptr(sptr, n);
+		if (IS_ERR(ustr))
+			goto fail;
+
+		len = strnlen_user(ustr, MAX_ARG_STRLEN);
+		if (!len)
+			goto fail;
+
+		ret = -E2BIG;
+		if (len > MAX_ARG_STRLEN)
+			goto fail;
+
+		ret = -EFAULT;
+		res[n] = kzalloc(sizeof(**res) * len, GFP_KERNEL);
+		if (!res[n])
+			goto fail;
+
+		if (strncpy_from_user(res[n], ustr, len))
+			goto fail;
+	}
+	res[n] = NULL;
+	return 0;
+
+fail:
+	argv_free(res);
+
+out:
+	return ret;
+}
+
+int do_pspawn(char *filename,
 	const char __user *const __user *__argv,
 	const char __user *const __user *__envp,
 	struct pt_regs *regs)
 {
-	int pid;
-	long error;
-        char *filename;
-	struct user_arg_ptr argv = { .ptr.native = __argv };
-	struct user_arg_ptr envp = { .ptr.native = __envp };
+	char **argv, **envp;
+	int ret;
 
-	pid = do_fork(SIGCHLD, regs->sp, regs, 0, NULL, NULL);
-	if (pid == 0) {
-	        filename = getname(name);
-	        error = PTR_ERR(filename);
-	        if (IS_ERR(filename))
-		        return error;
+	printk(KERN_WARNING "Stage 2");
+	/* copy args and envp */
+	ret = copy_strings_user(__argv, &argv);
+	if (ret < 0)
+		return ret;
 
-	        error = do_execve_common(filename, argv, envp, regs);
-                putname(filename);
-                return error;
-	}
+	printk(KERN_WARNING "Stage 3");
+	ret = copy_strings_user(__envp, &envp);
+	if (ret < 0)
+		return ret;
 
-	return pid;
+	printk(KERN_WARNING "Stage 4");
+	/* enable usermode helper */
+	if (usermodehelper_is_disabled())
+		usermodehelper_enable();
+
+	printk(KERN_WARNING "Stage 5");
+	ret = call_usermodehelper(filename, argv, envp, UMH_NO_WAIT);
+	return ret;
 }
