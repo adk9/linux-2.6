@@ -328,9 +328,12 @@ long sys_execve(const char __user *name,
 }
 
 long sys_pspawn(const char __user *name,
-	const char __user *const __user *__argv,
-	const char __user *const __user *__envp,
-	struct pt_regs *regs)
+		const char __user *const __user *__argv,
+		const char __user *const __user *__envp,
+		unsigned int nspawns, unsigned int clen,
+		unsigned long __user * __user *user_mask_ptr,
+		enum pspawn_flags flags,
+		struct pt_regs *regs)
 {
 	long error;
 	char *filename;
@@ -339,7 +342,8 @@ long sys_pspawn(const char __user *name,
 	error = PTR_ERR(filename);
 	if (IS_ERR(filename))
 		return error;
-	error = do_pspawn(filename, __argv, __envp, regs);
+	error = do_pspawn(filename, __argv, __envp, nspawns,
+			  clen, user_mask_ptr, flags, regs);
 
 #ifdef CONFIG_X86_32
 	if (error == 0) {

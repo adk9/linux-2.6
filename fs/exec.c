@@ -2337,11 +2337,11 @@ static int copy_strings_user(const char __user *const __user *str, char ***resul
 			goto fail;
 
 		ret = -EFAULT;
-		res[n] = kzalloc(sizeof(**res) * len, GFP_KERNEL);
+		res[n] = kzalloc(sizeof(**res) * (len+1), GFP_KERNEL);
 		if (!res[n])
 			goto fail;
 
-		if (strncpy_from_user(res[n], ustr, len))
+		if (copy_from_user(res[n], ustr, len))
 			goto fail;
 	}
 	res[n] = NULL;
@@ -2354,31 +2354,100 @@ out:
 	return ret;
 }
 
+static int pspawn_init(struct subprocess_info *info, struct cred *cred)
+{
+	cpumask_var_t mask = info->data;
+
+	set_cpus_allowed_ptr(current, mask);
+	free_cpumask_var(mask);
+	return 0;
+}
+
 int do_pspawn(char *filename,
-	const char __user *const __user *__argv,
-	const char __user *const __user *__envp,
-	struct pt_regs *regs)
+	      const char __user *const __user *__argv,
+	      const char __user *const __user *__envp,
+	      unsigned int nspawns, unsigned int clen,
+	      unsigned long __user * __user *user_mask_ptr,
+	      enum pspawn_flags flags,
+	      struct pt_regs *regs)
 {
 	char **argv, **envp;
-	int ret;
+	enum umh_wait umh_flags;
+	cpumask_var_t mask;
+	int n, ret, len;
 
-	printk(KERN_WARNING "Stage 2");
-	/* copy args and envp */
-	ret = copy_strings_user(__argv, &argv);
-	if (ret < 0)
-		return ret;
+        switch (flags) {
+        case PSPAWN_NO_WAIT:
+                umh_flags = UMH_NO_WAIT;
+                break;
+        case PSPAWN_WAIT_TERM:
+                /* TODO */
+                umh_flags = UMH_WAIT_PROC;
+                break;
+        case PSPAWN_WAIT_LAUNCH:
+                umh_flags = UMH_WAIT_EXEC;
+                break;
+        default:
+                return -EFAULT;
+        }
 
-	printk(KERN_WARNING "Stage 3");
-	ret = copy_strings_user(__envp, &envp);
-	if (ret < 0)
-		return ret;
+        /* copy args and envp */
+        ret = copy_strings_user(__argv, &argv);
+        if (ret < 0)
+                return ret;
 
-	printk(KERN_WARNING "Stage 4");
-	/* enable usermode helper */
-	if (usermodehelper_is_disabled())
-		usermodehelper_enable();
+        ret = copy_strings_user(__envp, &envp);
+        if (ret < 0)
+                goto out2;
 
-	printk(KERN_WARNING "Stage 5");
-	ret = call_usermodehelper(filename, argv, envp, UMH_NO_WAIT);
-	return ret;
+        /* enable usermode helper */
+        if (usermodehelper_is_disabled())
+                usermodehelper_enable();
+
+	if (clen > cpumask_size())
+		clen = cpumask_size();
+
+	/* do the spawns */
+	for (n = 0; n < nspawns; n++) {
+		if (!user_mask_ptr || (clen == 0)) {
+			ret = call_usermodehelper(filename, argv, envp, umh_flags);
+			if (ret < 0)
+				goto out1;
+			continue;
+		}
+
+		if (!alloc_cpumask_var(&mask, GFP_KERNEL)) {
+			ret = -ENOMEM;
+			goto out1;
+		}
+
+		if (!user_mask_ptr[n]) {
+			free_cpumask_var(mask);
+			ret = -EFAULT;
+			goto out1;
+		}
+
+		if (clen < cpumask_size())
+			cpumask_clear(mask);
+
+		if (copy_from_user(mask, user_mask_ptr[n], clen)) {
+			free_cpumask_var(mask);
+			ret = -EFAULT;
+			goto out1;
+		}
+
+		ret = call_usermodehelper_fns(filename, argv, envp, umh_flags,
+					      pspawn_init, NULL, mask);
+		if (ret < 0)
+			goto out1;
+	}
+
+	return 0;
+
+out1:
+        argv_free(envp);
+
+out2:
+        argv_free(argv);
+        return ret;
 }
