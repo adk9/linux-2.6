@@ -2368,28 +2368,14 @@ int do_pspawn(char *filename,
 	      const char __user *const __user *__envp,
 	      unsigned int nspawns, unsigned int clen,
 	      unsigned long __user * __user *user_mask_ptr,
-	      enum pspawn_flags flags,
-	      struct pt_regs *regs)
+	      enum umh_wait umh_flags)
 {
 	char **argv, **envp;
-	enum umh_wait umh_flags;
 	cpumask_var_t mask;
-	int n, ret, len;
+	int n, ret;
 
-        switch (flags) {
-        case PSPAWN_NO_WAIT:
-                umh_flags = UMH_NO_WAIT;
-                break;
-        case PSPAWN_WAIT_TERM:
-                /* TODO */
-                umh_flags = UMH_WAIT_PROC;
-                break;
-        case PSPAWN_WAIT_LAUNCH:
-                umh_flags = UMH_WAIT_EXEC;
-                break;
-        default:
-                return -EFAULT;
-        }
+	if (umh_flags == UMH_WAIT_PROC)
+		return -ENOSYS;
 
         /* copy args and envp */
         ret = copy_strings_user(__argv, &argv);
@@ -2430,7 +2416,7 @@ int do_pspawn(char *filename,
 		if (clen < cpumask_size())
 			cpumask_clear(mask);
 
-		if (copy_from_user(mask, user_mask_ptr[n], clen)) {
+		if (copy_from_user((struct cpumask *)mask, user_mask_ptr+n, clen)) {
 			free_cpumask_var(mask);
 			ret = -EFAULT;
 			goto out1;
@@ -2442,7 +2428,7 @@ int do_pspawn(char *filename,
 			goto out1;
 	}
 
-	return 0;
+	ret = 0;
 
 out1:
         argv_free(envp);

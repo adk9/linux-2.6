@@ -29,6 +29,24 @@ asmlinkage long sys_execve(const char __user *filename,
 			   struct pt_regs *regs);
 #endif
 
+#ifndef sys_pspawn
+asmlinkage long sys_pspawn(const char __user *name,
+			   const char __user *const __user *__argv,
+			   const char __user *const __user *__envp,
+			   unsigned int nspawns, unsigned int clen,
+			   unsigned long __user * __user *user_mask_ptr,
+			   struct pt_regs *regs);
+#endif
+
+#ifndef sys_ipspawn
+asmlinkage long sys_ipspawn(const char __user *name,
+			   const char __user *const __user *__argv,
+			   const char __user *const __user *__envp,
+			   unsigned int nspawns, unsigned int clen,
+			   unsigned long __user * __user *user_mask_ptr,
+			   struct pt_regs *regs);
+#endif
+
 #ifndef sys_mmap2
 asmlinkage long sys_mmap2(unsigned long addr, unsigned long len,
 			unsigned long prot, unsigned long flags,

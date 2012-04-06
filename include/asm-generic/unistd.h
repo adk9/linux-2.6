@@ -693,9 +693,11 @@ __SC_COMP(__NR_process_vm_writev, sys_process_vm_writev, \
           compat_sys_process_vm_writev)
 #define __NR_pspawn 272
 __SYSCALL(__NR_pspawn, sys_pspawn)
+#define __NR_ipspawn 273
+__SYSCALL(__NR_ipspawn, sys_ipspawn)
 
 #undef __NR_syscalls
-#define __NR_syscalls 273
+#define __NR_syscalls 274
 
 /*
  * All syscalls below here should go away really,

@@ -332,7 +332,6 @@ long sys_pspawn(const char __user *name,
 		const char __user *const __user *__envp,
 		unsigned int nspawns, unsigned int clen,
 		unsigned long __user * __user *user_mask_ptr,
-		enum pspawn_flags flags,
 		struct pt_regs *regs)
 {
 	long error;
@@ -342,8 +341,38 @@ long sys_pspawn(const char __user *name,
 	error = PTR_ERR(filename);
 	if (IS_ERR(filename))
 		return error;
+
 	error = do_pspawn(filename, __argv, __envp, nspawns,
-			  clen, user_mask_ptr, flags, regs);
+			  clen, user_mask_ptr, UMH_WAIT_EXEC);
+
+#ifdef CONFIG_X86_32
+	if (error == 0) {
+		/* Make sure we don't return using sysenter.. */
+		set_thread_flag(TIF_IRET);
+	}
+#endif
+
+	putname(filename);
+	return error;
+}
+
+long sys_ipspawn(const char __user *name,
+		const char __user *const __user *__argv,
+		const char __user *const __user *__envp,
+		unsigned int nspawns, unsigned int clen,
+		unsigned long __user * __user *user_mask_ptr,
+		struct pt_regs *regs)
+{
+	long error;
+	char *filename;
+
+	filename = getname(name);
+	error = PTR_ERR(filename);
+	if (IS_ERR(filename))
+		return error;
+
+	error = do_pspawn(filename, __argv, __envp, nspawns,
+			  clen, user_mask_ptr, UMH_NO_WAIT);
 
 #ifdef CONFIG_X86_32
 	if (error == 0) {
